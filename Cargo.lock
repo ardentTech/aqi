@@ -33,6 +33,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "aqi"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d145d81bc54aac168c5915a3fa846a091b5808e3ddc2ee7d6083a73e02c90f49"
+
+[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1253,7 +1259,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1846962cb70e204940fb1e79a8d330998af71a48b50e9e2588e08ef8879f637e"
 dependencies = [
- "defmt 0.3.100",
+ "aqi 0.2.0",
  "document-features",
  "embedded-hal 1.0.0",
  "embedded-hal-async",

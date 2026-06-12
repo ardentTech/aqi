@@ -21,7 +21,7 @@ esp-backtrace = { version = "0.19.0", features = [
 ] }
 esp-println = { version = "0.17.0", features = ["defmt-espflash", "esp32c3"] }
 heapless = "0.9.3"
-pmsa003i = { version = "0.1.11", features = ["async", "defmt"] }
+pmsa003i = { version = "0.1.11", features = ["aqi", "async"] }
 ssd1306 = { version = "0.10.0", features = ["async", "graphics"] }
 static_cell = "2.1.1"
 

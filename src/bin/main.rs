@@ -8,6 +8,7 @@
 #![deny(clippy::large_stack_frames)]
 
 use defmt::{error, info};
+use defmt::export::display;
 use embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice;
 use embassy_executor::Spawner;
 use embassy_sync::mutex::Mutex;
@@ -22,7 +23,9 @@ use embedded_graphics::{
 };
 use esp_hal::clock::CpuClock;
 use esp_hal::{i2c, Async};
+use esp_hal::gpio::{Input, InputConfig, Pull};
 use esp_hal::i2c::master::{Config, I2c};
+use esp_hal::rtc_cntl::Rtc;
 use esp_hal::time::Rate;
 use esp_hal::timer::timg::TimerGroup;
 #[allow(unused_imports)]
@@ -52,6 +55,7 @@ async fn main(spawner: Spawner) -> ! {
 
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
+    //let rtc = Rtc::new(peripherals.LPWR);
 
     // The following pins are used to bootstrap the chip. They are available
     // for use, but check the datasheet of the module for more information on them.
@@ -67,6 +71,9 @@ async fn main(spawner: Spawner) -> ! {
     let _ = peripherals.GPIO16;
     let _ = peripherals.GPIO17;
 
+    // let right = Input::new(peripherals.GPIO7, InputConfig::default().with_pull(Pull::Down));
+    // let left = Input::new(peripherals.GPIO6, InputConfig::default().with_pull(Pull::Down));
+
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     let sw_interrupt =
         esp_hal::interrupt::software::SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
@@ -81,9 +88,12 @@ async fn main(spawner: Spawner) -> ! {
 
     spawner.spawn(aqi_task(i2c_bus).unwrap());
     spawner.spawn(display_task(i2c_bus).unwrap());
+    spawner.spawn(left_btn(Input::new(peripherals.GPIO6, InputConfig::default().with_pull(Pull::Down))).unwrap());
+    spawner.spawn(right_btn(Input::new(peripherals.GPIO7, InputConfig::default().with_pull(Pull::Down))).unwrap());
 
     // for inspiration have a look at the examples at https://github.com/esp-rs/esp-hal/tree/esp-hal-v1.1.0/examples
     loop {
+        //info!("now: {}", rtc.current_time_us());
         Timer::after(Duration::from_secs(1)).await;
     }
 }
@@ -119,15 +129,32 @@ async fn display_task(i2c_bus: &'static I2cAsyncMutex) {
     loop {
         let reading = AQI_READING.wait().await;
         let env_reading: EnvReading = reading.into();
-        Text::with_baseline(&*env_reading.pm1_str(), Point::new(0, 16), text_style, Baseline::Top)
+
+        Text::with_baseline("AQI", Point::zero(), text_style, Baseline::Top)
             .draw(&mut display)
             .unwrap();
-        Text::with_baseline(&*env_reading.pm2_5_str(), Point::new(0, 32), text_style, Baseline::Top)
+        Text::with_baseline(&*env_reading.aqi_pm2_5_str(), Point::new(0, 16), text_style, Baseline::Top)
             .draw(&mut display)
             .unwrap();
-        Text::with_baseline(&*env_reading.pm10_str(), Point::new(0, 48), text_style, Baseline::Top)
+        Text::with_baseline(&*env_reading.aqi_pm10_str(), Point::new(0, 32), text_style, Baseline::Top)
             .draw(&mut display)
             .unwrap();
         display.flush().await.unwrap();
+    }
+}
+
+#[embassy_executor::task]
+async fn left_btn(mut btn: Input<'static>) {
+    loop {
+        btn.wait_for_rising_edge().await;
+        info!("left_btn");
+    }
+}
+
+#[embassy_executor::task]
+async fn right_btn(mut btn: Input<'static>) {
+    loop {
+        btn.wait_for_rising_edge().await;
+        info!("right_btn");
     }
 }
