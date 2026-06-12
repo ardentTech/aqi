@@ -13,6 +13,7 @@ use embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice;
 use embassy_executor::Spawner;
 use embassy_sync::mutex::Mutex;
 use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex};
+use embassy_sync::channel::Channel;
 use embassy_sync::signal;
 use embassy_time::{Duration, Timer};
 use embedded_graphics::{
@@ -34,7 +35,7 @@ use pmsa003i::{Pmsa003i, Reading};
 use ssd1306::{prelude::*, I2CDisplayInterface, Ssd1306, Ssd1306Async};
 use ssd1306::mode::BufferedGraphicsModeAsync;
 use static_cell::StaticCell;
-use lib::EnvReading;
+use lib::{EnvReading, AppEvent, State, View};
 
 // This creates a default app-descriptor required by the esp-idf bootloader.
 // For more information see: <https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/app_image_format.html#application-description>
@@ -42,7 +43,9 @@ esp_bootloader_esp_idf::esp_app_desc!();
 
 type I2cAsyncMutex = Mutex<NoopRawMutex, I2c<'static, Async>>;
 
-static AQI_READING: signal::Signal<CriticalSectionRawMutex, Reading> = signal::Signal::new();
+static STATE_CHANGED: signal::Signal<CriticalSectionRawMutex, ()> = signal::Signal::new();
+static EVENT_BUS: Channel<CriticalSectionRawMutex, AppEvent, 8> = Channel::new();
+static STATE: Mutex<CriticalSectionRawMutex, State> = Mutex::new(State::new());
 
 #[allow(
     clippy::large_stack_frames,
@@ -71,9 +74,6 @@ async fn main(spawner: Spawner) -> ! {
     let _ = peripherals.GPIO16;
     let _ = peripherals.GPIO17;
 
-    // let right = Input::new(peripherals.GPIO7, InputConfig::default().with_pull(Pull::Down));
-    // let left = Input::new(peripherals.GPIO6, InputConfig::default().with_pull(Pull::Down));
-
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     let sw_interrupt =
         esp_hal::interrupt::software::SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
@@ -86,6 +86,7 @@ async fn main(spawner: Spawner) -> ! {
         .into_async();
     let i2c_bus = I2C_BUS.init(Mutex::new(i2c));
 
+    spawner.spawn(orchestration().unwrap());
     spawner.spawn(aqi_task(i2c_bus).unwrap());
     spawner.spawn(display_task(i2c_bus).unwrap());
     spawner.spawn(left_btn(Input::new(peripherals.GPIO6, InputConfig::default().with_pull(Pull::Down))).unwrap());
@@ -105,7 +106,7 @@ async fn aqi_task(i2c_bus: &'static I2cAsyncMutex) {
     loop {
         match pmsa003i.read().await {
             Ok(reading) => {
-                AQI_READING.signal(reading)
+                EVENT_BUS.sender().send(AppEvent::PMSA003IRead(reading)).await;
             }
             Err(_) => error!("pmsa003i.read failed"),
         }
@@ -126,19 +127,52 @@ async fn display_task(i2c_bus: &'static I2cAsyncMutex) {
         .text_color(BinaryColor::On)
         .build();
 
-    loop {
-        let reading = AQI_READING.wait().await;
-        let env_reading: EnvReading = reading.into();
+    Text::with_baseline("Ready!", Point::zero(), text_style, Baseline::Top)
+        .draw(&mut display)
+        .unwrap();
+    display.flush().await.unwrap();
 
-        Text::with_baseline("AQI", Point::zero(), text_style, Baseline::Top)
-            .draw(&mut display)
-            .unwrap();
-        Text::with_baseline(&*env_reading.aqi_pm2_5_str(), Point::new(0, 16), text_style, Baseline::Top)
-            .draw(&mut display)
-            .unwrap();
-        Text::with_baseline(&*env_reading.aqi_pm10_str(), Point::new(0, 32), text_style, Baseline::Top)
-            .draw(&mut display)
-            .unwrap();
+    loop {
+        STATE_CHANGED.wait().await;
+
+        display.clear_buffer();
+        display.flush().await.unwrap();
+
+        let state = STATE.lock().await;
+        if let Some(env_reading) = &state.env_reading {
+            match state.view {
+                View::Aqi => {
+                    Text::with_baseline("AQI", Point::zero(), text_style, Baseline::Top)
+                        .draw(&mut display)
+                        .unwrap();
+                    Text::with_baseline(&*env_reading.aqi_pm2_5_str(), Point::new(0, 16), text_style, Baseline::Top)
+                        .draw(&mut display)
+                        .unwrap();
+                    Text::with_baseline(&*env_reading.aqi_pm10_str(), Point::new(0, 32), text_style, Baseline::Top)
+                        .draw(&mut display)
+                        .unwrap();
+                }
+                View::Pm => {
+                    Text::with_baseline("PM", Point::zero(), text_style, Baseline::Top)
+                        .draw(&mut display)
+                        .unwrap();
+                    Text::with_baseline(&*env_reading.pm1_str(), Point::new(0, 16), text_style, Baseline::Top)
+                        .draw(&mut display)
+                        .unwrap();
+                    Text::with_baseline(&*env_reading.pm2_5_str(), Point::new(0, 32), text_style, Baseline::Top)
+                        .draw(&mut display)
+                        .unwrap();
+                    Text::with_baseline(&*env_reading.pm10_str(), Point::new(0, 48), text_style, Baseline::Top)
+                        .draw(&mut display)
+                        .unwrap();
+                }
+            }
+        } else {
+            Text::with_baseline(":(", Point::zero(), text_style, Baseline::Top)
+                .draw(&mut display)
+                .unwrap();
+        }
+
         display.flush().await.unwrap();
     }
 }
@@ -147,7 +181,37 @@ async fn display_task(i2c_bus: &'static I2cAsyncMutex) {
 async fn left_btn(mut btn: Input<'static>) {
     loop {
         btn.wait_for_rising_edge().await;
-        info!("left_btn");
+        EVENT_BUS.sender().send(AppEvent::LeftClicked).await;
+    }
+}
+
+#[embassy_executor::task]
+async fn orchestration() {
+    let receiver = EVENT_BUS.receiver();
+    loop {
+        let event = receiver.receive().await;
+        {
+            let mut state = STATE.lock().await;
+            match event {
+                AppEvent::LeftClicked => {
+                    state.view = match state.view {
+                        View::Aqi => View::Pm,
+                        View::Pm => View::Aqi
+                    }
+                }
+                AppEvent::PMSA003IRead(reading) => {
+                    state.env_reading = Some(reading.into());
+                    // TODO signal to display?
+                }
+                AppEvent::RightClicked => {
+                    state.view = match state.view {
+                        View::Aqi => View::Pm,
+                        View::Pm => View::Aqi
+                    }
+                }
+            }
+        }
+        STATE_CHANGED.signal(());
     }
 }
 
@@ -155,6 +219,6 @@ async fn left_btn(mut btn: Input<'static>) {
 async fn right_btn(mut btn: Input<'static>) {
     loop {
         btn.wait_for_rising_edge().await;
-        info!("right_btn");
+        EVENT_BUS.sender().send(AppEvent::RightClicked).await;
     }
 }

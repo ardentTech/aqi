@@ -77,12 +77,23 @@ impl From<Reading> for EnvReading {
     }
 }
 
-enum DisplayView {
+pub enum View {
     Aqi,
     Pm,
 }
 
-enum Event {
-    AqiRead,
-    DisplayRendered
+pub struct State {
+    pub env_reading: Option<EnvReading>,
+    pub view: View
+}
+impl State {
+    pub const fn new() -> Self {
+        Self { env_reading: None, view: View::Pm }
+    }
+}
+
+pub enum AppEvent {
+    LeftClicked,
+    PMSA003IRead(Reading),
+    RightClicked,
 }
