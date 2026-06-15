@@ -138,8 +138,32 @@ async fn display_task(i2c_bus: &'static I2cAsyncMutex) {
                         .draw(&mut display)
                         .unwrap();
                 }
+                View::ParticleDiameter => {
+                    Text::with_baseline("Part Diam in 0.1L Air", Point::new(0, 0), text_style, Baseline::Top)
+                        .draw(&mut display)
+                        .unwrap();
+                    Text::with_baseline(&*env_reading.p_gt_0_3_str(), Point::new(0, 16), text_style, Baseline::Top)
+                        .draw(&mut display)
+                        .unwrap();
+                    Text::with_baseline(&*env_reading.p_gt_0_5_str(), Point::new(0, 32), text_style, Baseline::Top)
+                        .draw(&mut display)
+                        .unwrap();
+                    Text::with_baseline(&*env_reading.p_gt_1_str(), Point::new(0, 48), text_style, Baseline::Top)
+                        .draw(&mut display)
+                        .unwrap();
+                    // TODO need a separate view
+                    Text::with_baseline(&*env_reading.p_gt_2_5_str(), Point::new(0, 64), text_style, Baseline::Top)
+                        .draw(&mut display)
+                        .unwrap();
+                    Text::with_baseline(&*env_reading.p_gt_5_str(), Point::new(0, 80), text_style, Baseline::Top)
+                        .draw(&mut display)
+                        .unwrap();
+                    Text::with_baseline(&*env_reading.p_gt_10_str(), Point::new(0, 96), text_style, Baseline::Top)
+                        .draw(&mut display)
+                        .unwrap();
+                }
                 View::Pm => {
-                    Text::with_baseline("Particulate Matter", Point::new(0, 0), text_style, Baseline::Top)
+                    Text::with_baseline("PM Con", Point::new(0, 0), text_style, Baseline::Top)
                         .draw(&mut display)
                         .unwrap();
                     Text::with_baseline(&*env_reading.pm1_str(), Point::new(0, 16), text_style, Baseline::Top)
@@ -153,7 +177,7 @@ async fn display_task(i2c_bus: &'static I2cAsyncMutex) {
                         .unwrap();
                 }
                 View::PmEnv => {
-                    Text::with_baseline("Particulate Matter", Point::new(0, 0), text_style, Baseline::Top)
+                    Text::with_baseline("PM Con Atmo Env", Point::new(0, 0), text_style, Baseline::Top)
                         .draw(&mut display)
                         .unwrap();
                     Text::with_baseline(&*env_reading.pm1_env_str(), Point::new(0, 16), text_style, Baseline::Top)
@@ -200,7 +224,8 @@ async fn orchestration() {
                 }
                 AppEvent::RightBtnClicked => {
                     state.view = match state.view {
-                        View::Aqi => View::Pm,
+                        View::Aqi => View::ParticleDiameter,
+                        View::ParticleDiameter => View::Pm,
                         View::Pm => View::PmEnv,
                         View::PmEnv => View::Aqi,
                     }
