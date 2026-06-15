@@ -89,6 +89,8 @@ async fn main(spawner: Spawner) {
     spawner.spawn(display_task(i2c_bus).unwrap());
     spawner.spawn(left_btn(Input::new(peripherals.GPIO6, InputConfig::default().with_pull(Pull::Down))).unwrap());
     spawner.spawn(right_btn(Input::new(peripherals.GPIO7, InputConfig::default().with_pull(Pull::Down))).unwrap());
+
+    TAKE_ENV_READING.signal(());
 }
 
 #[embassy_executor::task]
@@ -126,7 +128,7 @@ async fn display_task(i2c_bus: &'static I2cAsyncMutex) {
         if let Some(env_reading) = &state.env_reading {
             match state.view {
                 View::Aqi => {
-                    Text::with_baseline("AQI", Point::new(0, 0), text_style, Baseline::Top)
+                    Text::with_baseline("Air Quality Index", Point::new(0, 0), text_style, Baseline::Top)
                         .draw(&mut display)
                         .unwrap();
                     Text::with_baseline(&*env_reading.aqi_pm2_5_str(), Point::new(0, 16), text_style, Baseline::Top)
@@ -137,7 +139,7 @@ async fn display_task(i2c_bus: &'static I2cAsyncMutex) {
                         .unwrap();
                 }
                 View::Pm => {
-                    Text::with_baseline("PM", Point::new(0, 0), text_style, Baseline::Top)
+                    Text::with_baseline("Particulate Matter", Point::new(0, 0), text_style, Baseline::Top)
                         .draw(&mut display)
                         .unwrap();
                     Text::with_baseline(&*env_reading.pm1_str(), Point::new(0, 16), text_style, Baseline::Top)
@@ -147,6 +149,20 @@ async fn display_task(i2c_bus: &'static I2cAsyncMutex) {
                         .draw(&mut display)
                         .unwrap();
                     Text::with_baseline(&*env_reading.pm10_str(), Point::new(0, 48), text_style, Baseline::Top)
+                        .draw(&mut display)
+                        .unwrap();
+                }
+                View::PmEnv => {
+                    Text::with_baseline("Particulate Matter", Point::new(0, 0), text_style, Baseline::Top)
+                        .draw(&mut display)
+                        .unwrap();
+                    Text::with_baseline(&*env_reading.pm1_env_str(), Point::new(0, 16), text_style, Baseline::Top)
+                        .draw(&mut display)
+                        .unwrap();
+                    Text::with_baseline(&*env_reading.pm2_5_env_str(), Point::new(0, 32), text_style, Baseline::Top)
+                        .draw(&mut display)
+                        .unwrap();
+                    Text::with_baseline(&*env_reading.pm10_env_str(), Point::new(0, 48), text_style, Baseline::Top)
                         .draw(&mut display)
                         .unwrap();
                 }
@@ -185,7 +201,8 @@ async fn orchestration() {
                 AppEvent::RightBtnClicked => {
                     state.view = match state.view {
                         View::Aqi => View::Pm,
-                        View::Pm => View::Aqi
+                        View::Pm => View::PmEnv,
+                        View::PmEnv => View::Aqi,
                     }
                 }
             }

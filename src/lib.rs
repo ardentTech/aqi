@@ -9,12 +9,15 @@ pub struct EnvReading {
     pm1: u16,
     pm2_5: u16,
     pm10: u16,
+    pm1_env: u16,
+    pm2_5_env: u16,
+    pm10_env: u16,
 }
 
 impl EnvReading {
     pub fn aqi_pm2_5_str(&self) -> String<26> {
         let mut msg: String<26> = String::new();
-        write!(&mut msg, "PM2.5 = {}",
+        write!(&mut msg, "PM2.5: {}",
                if let Some(aqi_pm2_5) = &self.aqi_pm2_5 {
                    match aqi_pm2_5.level() {
                        AirQualityLevel::Good => "Good",
@@ -31,7 +34,7 @@ impl EnvReading {
 
     pub fn aqi_pm10_str(&self) -> String<25> {
         let mut msg: String<25> = String::new();
-        write!(&mut msg, "PM10 = {}",
+        write!(&mut msg, "PM10 : {}",
                if let Some(aqi_pm10) = &self.aqi_pm10 {
                    match aqi_pm10.level() {
                        AirQualityLevel::Good => "Good",
@@ -46,21 +49,39 @@ impl EnvReading {
         msg
     }
 
-    pub fn pm1_str(&self) -> String<22> {
-        let mut msg: String<22> = String::new();
-        write!(&mut msg, "PM1.0 = {}µg/m³", self.pm1).unwrap();
+    pub fn pm1_str(&self) -> String<23> {
+        let mut msg: String<23> = String::new();
+        write!(&mut msg, "1.0: {} µg/m³", self.pm1).unwrap();
         msg
     }
 
-    pub fn pm2_5_str(&self) -> String<22> {
-        let mut msg: String<22> = String::new();
-        write!(&mut msg, "PM2.5 = {}µg/m³", self.pm2_5).unwrap();
+    pub fn pm2_5_str(&self) -> String<23> {
+        let mut msg: String<23> = String::new();
+        write!(&mut msg, "2.5: {} µg/m³", self.pm2_5).unwrap();
         msg
     }
 
-    pub fn pm10_str(&self) -> String<21> {
-        let mut msg: String<21> = String::new();
-        write!(&mut msg, "PM10  = {}µg/m³", self.pm10).unwrap();
+    pub fn pm10_str(&self) -> String<22> {
+        let mut msg: String<22> = String::new();
+        write!(&mut msg, "10 : {} µg/m³", self.pm10).unwrap();
+        msg
+    }
+
+    pub fn pm1_env_str(&self) -> String<30> {
+        let mut msg: String<30> = String::new();
+        write!(&mut msg, "1.0: {} µg/m³ atmo env", self.pm1).unwrap();
+        msg
+    }
+
+    pub fn pm2_5_env_str(&self) -> String<30> {
+        let mut msg: String<30> = String::new();
+        write!(&mut msg, "2.5: {} µg/m³ atmo env", self.pm2_5).unwrap();
+        msg
+    }
+
+    pub fn pm10_env_str(&self) -> String<29> {
+        let mut msg: String<29> = String::new();
+        write!(&mut msg, "10 : {} µg/m³ atmo env", self.pm10).unwrap();
         msg
     }
 }
@@ -70,6 +91,9 @@ impl From<Reading> for EnvReading {
         Self {
             aqi_pm2_5: reading.aqi_pm2_5.ok(),
             aqi_pm10: reading.aqi_pm10.ok(),
+            pm1_env: reading.env_pm1,
+            pm2_5_env: reading.env_pm2_5,
+            pm10_env: reading.env_pm10,
             pm1: reading.pm1,
             pm2_5: reading.pm2_5,
             pm10: reading.pm10,
@@ -80,6 +104,7 @@ impl From<Reading> for EnvReading {
 pub enum View {
     Aqi,
     Pm,
+    PmEnv,
 }
 
 pub struct State {
