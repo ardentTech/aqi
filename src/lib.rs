@@ -48,19 +48,19 @@ impl EnvReading {
 
     pub fn pm1_str(&self) -> String<22> {
         let mut msg: String<22> = String::new();
-        write!(&mut msg, "PM1.0 = {}μg/𝑚3", self.pm1).unwrap();
+        write!(&mut msg, "PM1.0 = {}µg/m³", self.pm1).unwrap();
         msg
     }
 
     pub fn pm2_5_str(&self) -> String<22> {
         let mut msg: String<22> = String::new();
-        write!(&mut msg, "PM2.5 = {}μg/𝑚3", self.pm2_5).unwrap();
+        write!(&mut msg, "PM2.5 = {}µg/m³", self.pm2_5).unwrap();
         msg
     }
 
     pub fn pm10_str(&self) -> String<21> {
         let mut msg: String<21> = String::new();
-        write!(&mut msg, "PM10 = {}μg/𝑚3", self.pm10).unwrap();
+        write!(&mut msg, "PM10  = {}µg/m³", self.pm10).unwrap();
         msg
     }
 }
@@ -93,7 +93,7 @@ impl State {
 }
 
 pub enum AppEvent {
-    LeftClicked,
-    PMSA003IRead(Reading),
-    RightClicked,
+    LeftBtnClicked,
+    EnvReadingTaken(Reading),
+    RightBtnClicked,
 }
