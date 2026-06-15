@@ -138,7 +138,7 @@ async fn display_task(i2c_bus: &'static I2cAsyncMutex) {
                         .draw(&mut display)
                         .unwrap();
                 }
-                View::ParticleDiameter => {
+                View::ParticleDiameter1 => {
                     Text::with_baseline("Part Diam in 0.1L Air", Point::new(0, 0), text_style, Baseline::Top)
                         .draw(&mut display)
                         .unwrap();
@@ -151,14 +151,18 @@ async fn display_task(i2c_bus: &'static I2cAsyncMutex) {
                     Text::with_baseline(&*env_reading.p_gt_1_str(), Point::new(0, 48), text_style, Baseline::Top)
                         .draw(&mut display)
                         .unwrap();
-                    // TODO need a separate view
-                    Text::with_baseline(&*env_reading.p_gt_2_5_str(), Point::new(0, 64), text_style, Baseline::Top)
+                }
+                View::ParticleDiameter2 => {
+                    Text::with_baseline("Part Diam in 0.1L Air", Point::new(0, 0), text_style, Baseline::Top)
                         .draw(&mut display)
                         .unwrap();
-                    Text::with_baseline(&*env_reading.p_gt_5_str(), Point::new(0, 80), text_style, Baseline::Top)
+                    Text::with_baseline(&*env_reading.p_gt_2_5_str(), Point::new(0, 16), text_style, Baseline::Top)
                         .draw(&mut display)
                         .unwrap();
-                    Text::with_baseline(&*env_reading.p_gt_10_str(), Point::new(0, 96), text_style, Baseline::Top)
+                    Text::with_baseline(&*env_reading.p_gt_5_str(), Point::new(0, 32), text_style, Baseline::Top)
+                        .draw(&mut display)
+                        .unwrap();
+                    Text::with_baseline(&*env_reading.p_gt_10_str(), Point::new(0, 48), text_style, Baseline::Top)
                         .draw(&mut display)
                         .unwrap();
                 }
@@ -224,8 +228,9 @@ async fn orchestration() {
                 }
                 AppEvent::RightBtnClicked => {
                     state.view = match state.view {
-                        View::Aqi => View::ParticleDiameter,
-                        View::ParticleDiameter => View::Pm,
+                        View::Aqi => View::ParticleDiameter1,
+                        View::ParticleDiameter1 => View::ParticleDiameter2,
+                        View::ParticleDiameter2 => View::Pm,
                         View::Pm => View::PmEnv,
                         View::PmEnv => View::Aqi,
                     }

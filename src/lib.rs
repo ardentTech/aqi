@@ -151,7 +151,8 @@ impl From<Reading> for EnvReading {
 
 pub enum View {
     Aqi,
-    ParticleDiameter,
+    ParticleDiameter1,
+    ParticleDiameter2,
     Pm,
     PmEnv,
 }
