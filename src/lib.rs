@@ -3,6 +3,7 @@ use core::fmt::Write;
 use heapless::String;
 use pmsa003i::{AirQuality, AirQualityLevel, Reading};
 
+#[derive(Clone, Copy)]
 pub struct EnvReading {
     aqi_pm2_5: Option<AirQuality>,
     aqi_pm10: Option<AirQuality>,
@@ -150,25 +151,37 @@ impl From<Reading> for EnvReading {
 }
 
 pub enum View {
-    Aqi,
-    ParticleDiameter1,
-    ParticleDiameter2,
-    Pm,
-    PmEnv,
+    Aqi(EnvReading),
+    Error,
+    ParticleDiameter1(EnvReading),
+    ParticleDiameter2(EnvReading),
+    Pm(EnvReading),
+    PmEnv(EnvReading),
+    Pmsa003iNotReady,
 }
 
-pub struct State {
+#[derive(Debug, Default, PartialEq)]
+pub enum State {
+    #[default]
+    Init,
+    Ready,
+}
+
+pub struct App {
     pub env_reading: Option<EnvReading>,
+    pub state: State,
     pub view: View
 }
-impl State {
+impl App {
     pub const fn new() -> Self {
-        Self { env_reading: None, view: View::Pm }
+        Self { env_reading: None, state: State::Init, view: View::Pmsa003iNotReady }
     }
 }
 
 pub enum AppEvent {
+    Init,
     LeftBtnClicked,
-    EnvReadingTaken(Reading),
+    Pmsa003iReadingTaken(Reading),
+    Pmsa003iReady,
     RightBtnClicked,
 }
