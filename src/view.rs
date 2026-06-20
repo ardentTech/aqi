@@ -12,6 +12,8 @@ use ssd1306::{I2CDisplayInterface, Ssd1306Async};
 use ssd1306::prelude::*;
 use crate::{Display, DisplayTextStyle, EnvReading, I2cAsyncMutex};
 
+const ROW_Y_OFFSET: i32 = 16;
+
 pub static REFRESH_VIEW: signal::Signal<CriticalSectionRawMutex, EnvReading> = signal::Signal::new();
 pub static RENDER_VIEW: signal::Signal<CriticalSectionRawMutex, View> = signal::Signal::new();
 pub static RENDER_NEXT_VIEW: signal::Signal<CriticalSectionRawMutex, ()> = signal::Signal::new();
@@ -103,85 +105,55 @@ impl ViewManager {
     }
 
     fn render_aqi(&mut self, reading: EnvReading) {
-        Text::with_baseline("Air Quality Index", Point::new(0, 0), self.text_style, Baseline::Top)
-            .draw(&mut self.display)
-            .unwrap();
-        Text::with_baseline(&*reading.aqi_pm2_5_str(), Point::new(0, 16), self.text_style, Baseline::Top)
-            .draw(&mut self.display)
-            .unwrap();
-        Text::with_baseline(&*reading.aqi_pm10_str(), Point::new(0, 32), self.text_style, Baseline::Top)
-            .draw(&mut self.display)
-            .unwrap();
+        self.render_title("Air Quality Index");
+        self.render_row(&*reading.aqi_pm2_5_str(), ROW_Y_OFFSET);
+        self.render_row(&*reading.aqi_pm10_str(), ROW_Y_OFFSET * 2);
     }
 
     fn render_init(&mut self) {
-        Text::with_baseline("Init", Point::new(0, 0), self.text_style, Baseline::Top)
-            .draw(&mut self.display)
-            .unwrap();
+        self.render_title("Warming up...");
     }
 
     fn render_error(&mut self) {
-        Text::with_baseline("Error", Point::new(0, 0), self.text_style, Baseline::Top)
-            .draw(&mut self.display)
-            .unwrap();
+        self.render_title("Error :(");
     }
 
     fn render_particle_diameter_1(&mut self, reading: EnvReading) {
-        Text::with_baseline("Part Diam in 0.1L Air", Point::new(0, 0), self.text_style, Baseline::Top)
-            .draw(&mut self.display)
-            .unwrap();
-        Text::with_baseline(&*reading.p_gt_0_3_str(), Point::new(0, 16), self.text_style, Baseline::Top)
-            .draw(&mut self.display)
-            .unwrap();
-        Text::with_baseline(&*reading.p_gt_0_5_str(), Point::new(0, 32), self.text_style, Baseline::Top)
-            .draw(&mut self.display)
-            .unwrap();
-        Text::with_baseline(&*reading.p_gt_1_str(), Point::new(0, 48), self.text_style, Baseline::Top)
-            .draw(&mut self.display)
-            .unwrap();
+        self.render_title("PM Diam / 0.1L Air");
+        self.render_row(&*reading.p_gt_0_3_str(), ROW_Y_OFFSET);
+        self.render_row(&*reading.p_gt_0_5_str(), ROW_Y_OFFSET * 2);
+        self.render_row(&*reading.p_gt_1_str(), ROW_Y_OFFSET * 3);
     }
 
     fn render_particle_diameter_2(&mut self, reading: EnvReading) {
-        Text::with_baseline("Part Diam in 0.1L Air", Point::new(0, 0), self.text_style, Baseline::Top)
-            .draw(&mut self.display)
-            .unwrap();
-        Text::with_baseline(&*reading.p_gt_2_5_str(), Point::new(0, 16), self.text_style, Baseline::Top)
-            .draw(&mut self.display)
-            .unwrap();
-        Text::with_baseline(&*reading.p_gt_5_str(), Point::new(0, 32), self.text_style, Baseline::Top)
-            .draw(&mut self.display)
-            .unwrap();
-        Text::with_baseline(&*reading.p_gt_10_str(), Point::new(0, 48), self.text_style, Baseline::Top)
-            .draw(&mut self.display)
-            .unwrap();
+        self.render_title("PM Diam / 0.1L Air");
+        self.render_row(&*reading.p_gt_2_5_str(), ROW_Y_OFFSET);
+        self.render_row(&*reading.p_gt_5_str(), ROW_Y_OFFSET * 2);
+        self.render_row(&*reading.p_gt_10_str(), ROW_Y_OFFSET * 3);
     }
 
     fn render_pm(&mut self, reading: EnvReading) {
-        Text::with_baseline("PM Con", Point::new(0, 0), self.text_style, Baseline::Top)
-            .draw(&mut self.display)
-            .unwrap();
-        Text::with_baseline(&*reading.pm1_str(), Point::new(0, 16), self.text_style, Baseline::Top)
-            .draw(&mut self.display)
-            .unwrap();
-        Text::with_baseline(&*reading.pm2_5_str(), Point::new(0, 32), self.text_style, Baseline::Top)
-            .draw(&mut self.display)
-            .unwrap();
-        Text::with_baseline(&*reading.pm10_str(), Point::new(0, 48), self.text_style, Baseline::Top)
+        self.render_title("PM Concen");
+        self.render_row(&*reading.pm1_str(), ROW_Y_OFFSET);
+        self.render_row(&*reading.pm2_5_str(), ROW_Y_OFFSET * 2);
+        self.render_row(&*reading.pm10_str(), ROW_Y_OFFSET * 3);
+    }
+
+    fn render_pm_env(&mut self, reading: EnvReading) {
+        self.render_title("PM Concen Atmo Env");
+        self.render_row(&*reading.pm1_env_str(), ROW_Y_OFFSET);
+        self.render_row(&*reading.pm2_5_env_str(), ROW_Y_OFFSET * 2);
+        self.render_row(&*reading.pm10_env_str(), ROW_Y_OFFSET * 3);
+    }
+
+    fn render_title(&mut self, text: &str) {
+        Text::with_baseline(text, Point::new(0, 0), self.text_style, Baseline::Top)
             .draw(&mut self.display)
             .unwrap();
     }
 
-    fn render_pm_env(&mut self, reading: EnvReading) {
-        Text::with_baseline("PM Con Atmo Env", Point::new(0, 0), self.text_style, Baseline::Top)
-            .draw(&mut self.display)
-            .unwrap();
-        Text::with_baseline(&*reading.pm1_env_str(), Point::new(0, 16), self.text_style, Baseline::Top)
-            .draw(&mut self.display)
-            .unwrap();
-        Text::with_baseline(&*reading.pm2_5_env_str(), Point::new(0, 32), self.text_style, Baseline::Top)
-            .draw(&mut self.display)
-            .unwrap();
-        Text::with_baseline(&*reading.pm10_env_str(), Point::new(0, 48), self.text_style, Baseline::Top)
+    fn render_row(&mut self, text: &str, y_offset: i32) {
+        Text::with_baseline(text, Point::new(0, y_offset), self.text_style, Baseline::Top)
             .draw(&mut self.display)
             .unwrap();
     }
