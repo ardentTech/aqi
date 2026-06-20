@@ -15,12 +15,6 @@ use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex};
 use embassy_sync::channel::Channel;
 use embassy_sync::signal;
 use embassy_time::{Duration, Timer};
-use embedded_graphics::{
-    mono_font::{iso_8859_1::FONT_6X12, MonoTextStyleBuilder},
-    pixelcolor::BinaryColor,
-    prelude::*,
-    text::{Baseline, Text},
-};
 use esp_hal::clock::CpuClock;
 use esp_hal::Async;
 use esp_hal::gpio::{Input, InputConfig, Pull};
@@ -30,19 +24,16 @@ use esp_hal::timer::timg::TimerGroup;
 #[allow(unused_imports)]
 use {esp_backtrace as _, esp_println as _};
 use pmsa003i::Pmsa003i;
-use ssd1306::{prelude::*, I2CDisplayInterface, Ssd1306Async};
 use static_cell::StaticCell;
-use lib::{AppEvent, App, View, State};
-
+use lib::{AppEvent, App, I2cAsyncMutex};
+use lib::view::{display_task, RENDER_NEXT_VIEW, REFRESH_VIEW};
 // TODO auto and manual mode
 
 // This creates a default app-descriptor required by the esp-idf bootloader.
 // For more information see: <https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/app_image_format.html#application-description>
 esp_bootloader_esp_idf::esp_app_desc!();
 
-type I2cAsyncMutex = Mutex<NoopRawMutex, I2c<'static, Async>>;
-
-static APP_CHANGED: signal::Signal<CriticalSectionRawMutex, ()> = signal::Signal::new();
+const PMSA003I_STARTUP_SEC: u64 = 1; // TODO should be 30
 static TAKE_ENV_READING: signal::Signal<CriticalSectionRawMutex, ()> = signal::Signal::new();
 static EVENT_BUS: Channel<CriticalSectionRawMutex, AppEvent, 8> = Channel::new();
 static APP: Mutex<CriticalSectionRawMutex, App> = Mutex::new(App::new());
@@ -93,19 +84,14 @@ async fn main(spawner: Spawner) {
     spawner.spawn(display_task(i2c_bus).unwrap());
     spawner.spawn(left_btn(Input::new(peripherals.GPIO6, InputConfig::default().with_pull(Pull::Down))).unwrap());
     spawner.spawn(right_btn(Input::new(peripherals.GPIO7, InputConfig::default().with_pull(Pull::Down))).unwrap());
-    EVENT_BUS.sender().send(AppEvent::Init).await;
 
-    Timer::after(Duration::from_secs(30)).await; // see: PMSA003I datasheet, page 9, section "Circuit Attentions", #4
-    {
-        let mut app = APP.lock().await;
-        app.state = State::Ready;
-    }
+    Timer::after(Duration::from_secs(PMSA003I_STARTUP_SEC)).await; // see: PMSA003I datasheet, page 9, section "Circuit Attentions", #4
     EVENT_BUS.sender().send(AppEvent::Pmsa003iReady).await;
 }
 
 #[embassy_executor::task]
 async fn aqi_task(i2c_bus: &'static I2cAsyncMutex) {
-    info!("aqi_task");
+    debug!("aqi_task");
     let mut pmsa003i = Pmsa003i::new(I2cDevice::new(i2c_bus)); // i2c addr: 0x12
     loop {
         TAKE_ENV_READING.wait().await;
@@ -116,107 +102,6 @@ async fn aqi_task(i2c_bus: &'static I2cAsyncMutex) {
             }
             Err(_) => error!("pmsa003i.read failed"),
         }
-    }
-}
-
-#[embassy_executor::task]
-async fn display_task(i2c_bus: &'static I2cAsyncMutex) {
-    info!("display_task");
-    let interface = I2CDisplayInterface::new(I2cDevice::new(i2c_bus));
-    let mut display = Ssd1306Async::new(interface, DisplaySize128x64, DisplayRotation::Rotate0)
-        .into_buffered_graphics_mode();
-    display.init().await.expect("TODO: panic message");
-
-    let text_style = MonoTextStyleBuilder::new()
-        .font(&FONT_6X12)
-        .text_color(BinaryColor::On)
-        .build();
-
-    loop {
-        APP_CHANGED.wait().await;
-        let state = APP.lock().await;
-        display.clear_buffer();
-        //if let Some(env_reading) = &state.env_reading {
-        match &state.view {
-            View::Aqi(reading) => {
-                Text::with_baseline("Air Quality Index", Point::new(0, 0), text_style, Baseline::Top)
-                    .draw(&mut display)
-                    .unwrap();
-                Text::with_baseline(&*reading.aqi_pm2_5_str(), Point::new(0, 16), text_style, Baseline::Top)
-                    .draw(&mut display)
-                    .unwrap();
-                Text::with_baseline(&*reading.aqi_pm10_str(), Point::new(0, 32), text_style, Baseline::Top)
-                    .draw(&mut display)
-                    .unwrap();
-            }
-            View::Error => {
-                Text::with_baseline("Error :(", Point::new(0, 0), text_style, Baseline::Top)
-                    .draw(&mut display)
-                    .unwrap();
-            }
-            View::ParticleDiameter1(reading) => {
-                Text::with_baseline("Part Diam in 0.1L Air", Point::new(0, 0), text_style, Baseline::Top)
-                    .draw(&mut display)
-                    .unwrap();
-                Text::with_baseline(&*reading.p_gt_0_3_str(), Point::new(0, 16), text_style, Baseline::Top)
-                    .draw(&mut display)
-                    .unwrap();
-                Text::with_baseline(&*reading.p_gt_0_5_str(), Point::new(0, 32), text_style, Baseline::Top)
-                    .draw(&mut display)
-                    .unwrap();
-                Text::with_baseline(&*reading.p_gt_1_str(), Point::new(0, 48), text_style, Baseline::Top)
-                    .draw(&mut display)
-                    .unwrap();
-            }
-            View::ParticleDiameter2(reading) => {
-                Text::with_baseline("Part Diam in 0.1L Air", Point::new(0, 0), text_style, Baseline::Top)
-                    .draw(&mut display)
-                    .unwrap();
-                Text::with_baseline(&*reading.p_gt_2_5_str(), Point::new(0, 16), text_style, Baseline::Top)
-                    .draw(&mut display)
-                    .unwrap();
-                Text::with_baseline(&*reading.p_gt_5_str(), Point::new(0, 32), text_style, Baseline::Top)
-                    .draw(&mut display)
-                    .unwrap();
-                Text::with_baseline(&*reading.p_gt_10_str(), Point::new(0, 48), text_style, Baseline::Top)
-                    .draw(&mut display)
-                    .unwrap();
-            }
-            View::Pm(reading) => {
-                Text::with_baseline("PM Con", Point::new(0, 0), text_style, Baseline::Top)
-                    .draw(&mut display)
-                    .unwrap();
-                Text::with_baseline(&*reading.pm1_str(), Point::new(0, 16), text_style, Baseline::Top)
-                    .draw(&mut display)
-                    .unwrap();
-                Text::with_baseline(&*reading.pm2_5_str(), Point::new(0, 32), text_style, Baseline::Top)
-                    .draw(&mut display)
-                    .unwrap();
-                Text::with_baseline(&*reading.pm10_str(), Point::new(0, 48), text_style, Baseline::Top)
-                    .draw(&mut display)
-                    .unwrap();
-            }
-            View::PmEnv(reading) => {
-                Text::with_baseline("PM Con Atmo Env", Point::new(0, 0), text_style, Baseline::Top)
-                    .draw(&mut display)
-                    .unwrap();
-                Text::with_baseline(&*reading.pm1_env_str(), Point::new(0, 16), text_style, Baseline::Top)
-                    .draw(&mut display)
-                    .unwrap();
-                Text::with_baseline(&*reading.pm2_5_env_str(), Point::new(0, 32), text_style, Baseline::Top)
-                    .draw(&mut display)
-                    .unwrap();
-                Text::with_baseline(&*reading.pm10_env_str(), Point::new(0, 48), text_style, Baseline::Top)
-                    .draw(&mut display)
-                    .unwrap();
-            }
-            View::Pmsa003iNotReady => {
-                Text::with_baseline("Getting ready...", Point::new(0, 0), text_style, Baseline::Top)
-                    .draw(&mut display)
-                    .unwrap();
-            }
-        }
-        display.flush().await.unwrap();
     }
 }
 
@@ -237,36 +122,25 @@ async fn orchestration() {
         {
             let mut app = APP.lock().await;
             match event {
-                AppEvent::Init => {
-                    app.view = View::Pmsa003iNotReady;
-                }
                 AppEvent::LeftBtnClicked => {
-                    if app.state == State::Ready {
+                    if app.is_ready() {
                         TAKE_ENV_READING.signal(());
                     }
                 }
                 AppEvent::Pmsa003iReady => {
-                    app.state = State::Ready;
-                    TAKE_ENV_READING.signal(());
+                    app.ready();
+                    TAKE_ENV_READING.signal(()); // automatically take first reading
                 }
                 AppEvent::Pmsa003iReadingTaken(reading) => {
-                    app.env_reading = Some(reading.into());
+                    REFRESH_VIEW.signal(reading.into());
                 }
                 AppEvent::RightBtnClicked => {
-                    if app.state == State::Ready {
-                        app.view = match &app.view {
-                            View::Aqi(reading) => View::ParticleDiameter1(*reading),
-                            View::ParticleDiameter1(reading) => View::ParticleDiameter2(*reading),
-                            View::ParticleDiameter2(reading) => View::Pm(*reading),
-                            View::Pm(reading) => View::PmEnv(*reading),
-                            View::PmEnv(reading) => View::Aqi(*reading),
-                            _ => View::Pmsa003iNotReady,
-                        }
+                    if app.is_ready() {
+                        RENDER_NEXT_VIEW.signal(());
                     }
                 }
             }
         }
-        APP_CHANGED.signal(());
     }
 }
 

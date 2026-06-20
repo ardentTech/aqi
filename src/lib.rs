@@ -1,7 +1,24 @@
 #![no_std]
+
+pub mod view;
+
 use core::fmt::Write;
+use embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice;
+use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+use embassy_sync::mutex::Mutex;
+use embedded_graphics::mono_font::MonoTextStyle;
+use embedded_graphics::pixelcolor::BinaryColor;
+use esp_hal::Async;
+use esp_hal::i2c::master::I2c;
 use heapless::String;
 use pmsa003i::{AirQuality, AirQualityLevel, Reading};
+use ssd1306::mode::BufferedGraphicsModeAsync;
+use ssd1306::prelude::{DisplaySize128x64, I2CInterface};
+use ssd1306::Ssd1306Async;
+
+pub type Display = Ssd1306Async<I2CInterface<I2cDevice<'static, NoopRawMutex, I2c<'static, Async>>>, DisplaySize128x64, BufferedGraphicsModeAsync<DisplaySize128x64>>;
+pub type DisplayTextStyle = MonoTextStyle<'static, BinaryColor>;
+pub type I2cAsyncMutex = Mutex<NoopRawMutex, I2c<'static, Async>>;
 
 #[derive(Clone, Copy)]
 pub struct EnvReading {
@@ -112,19 +129,19 @@ impl EnvReading {
 
     pub fn pm1_env_str(&self) -> String<21> {
         let mut msg: String<21> = String::new();
-        write!(&mut msg, "1.0: {} µg/m³", self.pm1).unwrap();
+        write!(&mut msg, "1.0: {} µg/m³", self.pm1_env).unwrap();
         msg
     }
 
     pub fn pm2_5_env_str(&self) -> String<21> {
         let mut msg: String<21> = String::new();
-        write!(&mut msg, "2.5: {} µg/m³", self.pm2_5).unwrap();
+        write!(&mut msg, "2.5: {} µg/m³", self.pm2_5_env).unwrap();
         msg
     }
 
     pub fn pm10_env_str(&self) -> String<20> {
         let mut msg: String<20> = String::new();
-        write!(&mut msg, "10 : {} µg/m³", self.pm10).unwrap();
+        write!(&mut msg, "10 : {} µg/m³", self.pm10_env).unwrap();
         msg
     }
 }
@@ -150,36 +167,42 @@ impl From<Reading> for EnvReading {
     }
 }
 
-pub enum View {
-    Aqi(EnvReading),
-    Error,
-    ParticleDiameter1(EnvReading),
-    ParticleDiameter2(EnvReading),
-    Pm(EnvReading),
-    PmEnv(EnvReading),
-    Pmsa003iNotReady,
-}
+// pub enum View {
+//     Aqi(EnvReading),
+//     Error,
+//     ParticleDiameter1(EnvReading),
+//     ParticleDiameter2(EnvReading),
+//     Pm(EnvReading),
+//     PmEnv(EnvReading),
+//     Pmsa003iNotReady,
+// }
 
 #[derive(Debug, Default, PartialEq)]
 pub enum State {
     #[default]
-    Init,
+    StartUp,
     Ready,
 }
 
 pub struct App {
     pub env_reading: Option<EnvReading>,
-    pub state: State,
-    pub view: View
+    state: State,
 }
 impl App {
     pub const fn new() -> Self {
-        Self { env_reading: None, state: State::Init, view: View::Pmsa003iNotReady }
+        Self { env_reading: None, state: State::StartUp }
+    }
+
+    pub fn is_ready(&self) -> bool {
+        self.state == State::Ready
+    }
+
+    pub fn ready(&mut self) {
+        self.state = State::Ready;
     }
 }
 
 pub enum AppEvent {
-    Init,
     LeftBtnClicked,
     Pmsa003iReadingTaken(Reading),
     Pmsa003iReady,
