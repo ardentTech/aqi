@@ -26,7 +26,7 @@ use {esp_backtrace as _, esp_println as _};
 use pmsa003i::Pmsa003i;
 use static_cell::StaticCell;
 use lib::{AppEvent, App, I2cAsyncMutex};
-use lib::view::{display_task, RENDER_NEXT_VIEW, REFRESH_VIEW};
+use lib::view::{display_task, RENDER_NEXT_VIEW, REFRESH_VIEW, RENDER_PREV_VIEW};
 // TODO auto and manual mode
 
 // This creates a default app-descriptor required by the esp-idf bootloader.
@@ -84,9 +84,20 @@ async fn main(spawner: Spawner) {
     spawner.spawn(display_task(i2c_bus).unwrap());
     spawner.spawn(left_btn(Input::new(peripherals.GPIO6, InputConfig::default().with_pull(Pull::Down))).unwrap());
     spawner.spawn(right_btn(Input::new(peripherals.GPIO7, InputConfig::default().with_pull(Pull::Down))).unwrap());
+    spawner.spawn(aqi_btn(Input::new(peripherals.GPIO5, InputConfig::default().with_pull(Pull::Down))).unwrap());
 
     Timer::after(Duration::from_secs(PMSA003I_STARTUP_SEC)).await; // see: PMSA003I datasheet, page 9, section "Circuit Attentions", #4
     EVENT_BUS.sender().send(AppEvent::Pmsa003iReady).await;
+}
+
+#[embassy_executor::task]
+async fn aqi_btn(mut btn: Input<'static>) {
+    debug!("aqi_btn");
+    loop {
+        btn.wait_for_rising_edge().await;
+        debug!("aqi btn clicked");
+        EVENT_BUS.sender().send(AppEvent::AqiBtnClicked).await;
+    }
 }
 
 #[embassy_executor::task]
@@ -107,6 +118,7 @@ async fn aqi_task(i2c_bus: &'static I2cAsyncMutex) {
 
 #[embassy_executor::task]
 async fn left_btn(mut btn: Input<'static>) {
+    debug!("left_btn");
     loop {
         btn.wait_for_rising_edge().await;
         debug!("left btn clicked");
@@ -116,15 +128,22 @@ async fn left_btn(mut btn: Input<'static>) {
 
 #[embassy_executor::task]
 async fn orchestration() {
+    debug!("orchestration");
     let receiver = EVENT_BUS.receiver();
     loop {
         let event = receiver.receive().await;
         {
             let mut app = APP.lock().await;
             match event {
-                AppEvent::LeftBtnClicked => {
+                AppEvent::AqiBtnClicked => {
+                    info!("AqiBtnClicked");
                     if app.is_ready() {
                         TAKE_ENV_READING.signal(());
+                    }
+                }
+                AppEvent::LeftBtnClicked => {
+                    if app.is_ready() {
+                        RENDER_PREV_VIEW.signal(());
                     }
                 }
                 AppEvent::Pmsa003iReady => {
@@ -146,6 +165,7 @@ async fn orchestration() {
 
 #[embassy_executor::task]
 async fn right_btn(mut btn: Input<'static>) {
+    debug!("right_btn");
     loop {
         btn.wait_for_rising_edge().await;
         debug!("right btn clicked");

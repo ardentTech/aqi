@@ -167,16 +167,6 @@ impl From<Reading> for EnvReading {
     }
 }
 
-// pub enum View {
-//     Aqi(EnvReading),
-//     Error,
-//     ParticleDiameter1(EnvReading),
-//     ParticleDiameter2(EnvReading),
-//     Pm(EnvReading),
-//     PmEnv(EnvReading),
-//     Pmsa003iNotReady,
-// }
-
 #[derive(Debug, Default, PartialEq)]
 pub enum State {
     #[default]
@@ -203,6 +193,7 @@ impl App {
 }
 
 pub enum AppEvent {
+    AqiBtnClicked,
     LeftBtnClicked,
     Pmsa003iReadingTaken(Reading),
     Pmsa003iReady,

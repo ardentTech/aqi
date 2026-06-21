@@ -1,6 +1,6 @@
 use defmt::{debug, info};
 use embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice;
-use embassy_futures::select::{select3, Either3};
+use embassy_futures::select::{select3, select4, Either3, Either4};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::signal;
 use embedded_graphics::{prelude::*};
@@ -14,9 +14,11 @@ use crate::{Display, DisplayTextStyle, EnvReading, I2cAsyncMutex};
 
 const ROW_Y_OFFSET: i32 = 16;
 
+// TODO Cmd enum with a single signal?
 pub static REFRESH_VIEW: signal::Signal<CriticalSectionRawMutex, EnvReading> = signal::Signal::new();
 pub static RENDER_VIEW: signal::Signal<CriticalSectionRawMutex, View> = signal::Signal::new();
 pub static RENDER_NEXT_VIEW: signal::Signal<CriticalSectionRawMutex, ()> = signal::Signal::new();
+pub static RENDER_PREV_VIEW: signal::Signal<CriticalSectionRawMutex, ()> = signal::Signal::new();
 
 pub enum View {
     Aqi(EnvReading),
@@ -45,10 +47,11 @@ pub async fn display_task(i2c_bus: &'static I2cAsyncMutex) {
     manager.render_view(View::Init).await;
 
     loop {
-        match select3(RENDER_VIEW.wait(), RENDER_NEXT_VIEW.wait(), REFRESH_VIEW.wait()).await {
-            Either3::First(view) => manager.render_view(view).await,
-            Either3::Second(_) => manager.render_next_view().await,
-            Either3::Third(reading) => manager.refresh_view(reading).await,
+        match select4(RENDER_VIEW.wait(), RENDER_NEXT_VIEW.wait(), REFRESH_VIEW.wait(), RENDER_PREV_VIEW.wait()).await {
+            Either4::First(view) => manager.render_view(view).await,
+            Either4::Second(_) => manager.render_next_view().await,
+            Either4::Third(reading) => manager.refresh_view(reading).await,
+            Either4::Fourth(_) => manager.render_prev_view().await,
         }
     }
 }
@@ -77,13 +80,25 @@ impl ViewManager {
     }
 
     pub async fn render_next_view(&mut self) {
-        info!("render_next_view");
+        debug!("render_next_view");
         match self.view {
             View::Aqi(reading) => self.render_view(View::ParticleDiameter1(reading)).await,
             View::ParticleDiameter1(reading) => self.render_view(View::ParticleDiameter2(reading)).await,
             View::ParticleDiameter2(reading) => self.render_view(View::Pm(reading)).await,
             View::Pm(reading) => self.render_view(View::PmEnv(reading)).await,
             View::PmEnv(reading) => self.render_view(View::Aqi(reading)).await,
+            _ => {}
+        }
+    }
+
+    pub async fn render_prev_view(&mut self) {
+        debug!("render_prev_view");
+        match self.view {
+            View::Aqi(reading) => self.render_view(View::PmEnv(reading)).await,
+            View::ParticleDiameter1(reading) => self.render_view(View::Aqi(reading)).await,
+            View::ParticleDiameter2(reading) => self.render_view(View::ParticleDiameter1(reading)).await,
+            View::Pm(reading) => self.render_view(View::ParticleDiameter2(reading)).await,
+            View::PmEnv(reading) => self.render_view(View::Pm(reading)).await,
             _ => {}
         }
     }
@@ -111,8 +126,10 @@ impl ViewManager {
     }
 
     fn render_init(&mut self) {
-        self.render_title("Warming up...");
+        self.render_title("Starting up...");
+        self.render_row("(takes 30 seconds)", ROW_Y_OFFSET);
     }
+
 
     fn render_error(&mut self) {
         self.render_title("Error :(");
