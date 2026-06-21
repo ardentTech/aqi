@@ -1,6 +1,5 @@
 use defmt::{debug, info};
 use embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice;
-use embassy_futures::select::{select3, select4, Either3, Either4};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::signal;
 use embedded_graphics::{prelude::*};
@@ -14,15 +13,19 @@ use crate::{Display, DisplayTextStyle, EnvReading, I2cAsyncMutex};
 
 const ROW_Y_OFFSET: i32 = 16;
 
-// TODO Cmd enum with a single signal?
-pub static REFRESH_VIEW: signal::Signal<CriticalSectionRawMutex, EnvReading> = signal::Signal::new();
-pub static RENDER_VIEW: signal::Signal<CriticalSectionRawMutex, View> = signal::Signal::new();
-pub static RENDER_NEXT_VIEW: signal::Signal<CriticalSectionRawMutex, ()> = signal::Signal::new();
-pub static RENDER_PREV_VIEW: signal::Signal<CriticalSectionRawMutex, ()> = signal::Signal::new();
+pub enum ViewCmd {
+    Refresh(EnvReading),
+    Next,
+    Prev
+}
 
+pub static VIEW_CMD: signal::Signal<CriticalSectionRawMutex, ViewCmd> = signal::Signal::new();
+
+#[derive(Debug, Default)]
 pub enum View {
     Aqi(EnvReading),
     Error,
+    #[default]
     Init,
     ParticleDiameter1(EnvReading),
     ParticleDiameter2(EnvReading),
@@ -47,11 +50,10 @@ pub async fn display_task(i2c_bus: &'static I2cAsyncMutex) {
     manager.render_view(View::Init).await;
 
     loop {
-        match select4(RENDER_VIEW.wait(), RENDER_NEXT_VIEW.wait(), REFRESH_VIEW.wait(), RENDER_PREV_VIEW.wait()).await {
-            Either4::First(view) => manager.render_view(view).await,
-            Either4::Second(_) => manager.render_next_view().await,
-            Either4::Third(reading) => manager.refresh_view(reading).await,
-            Either4::Fourth(_) => manager.render_prev_view().await,
+        match VIEW_CMD.wait().await {
+            ViewCmd::Refresh(reading) => manager.refresh_view(reading).await,
+            ViewCmd::Next => manager.render_next_view().await,
+            ViewCmd::Prev => manager.render_prev_view().await,
         }
     }
 }
@@ -59,62 +61,70 @@ pub async fn display_task(i2c_bus: &'static I2cAsyncMutex) {
 pub struct ViewManager {
     display: Display,
     text_style: DisplayTextStyle,
-    view: View,
+    view: Option<View>,
 }
 impl ViewManager {
     pub const fn new(display: Display, text_style: DisplayTextStyle) -> Self {
-        Self { display, text_style, view: View::Init } // TODO what should the default view be?
+        Self { display, text_style, view: None }
     }
 
-    pub async fn refresh_view(&mut self, reading: EnvReading) {
+    async fn refresh_view(&mut self, reading: EnvReading) {
         info!("refresh_view");
-        match self.view {
-            View::Aqi(_) => self.render_view(View::Aqi(reading)).await,
-            View::Init => self.render_view(View::Pm(reading)).await,
-            View::ParticleDiameter1(_) => self.render_view(View::ParticleDiameter1(reading)).await,
-            View::ParticleDiameter2(_) => self.render_view(View::ParticleDiameter2(reading)).await,
-            View::Pm(_) => self.render_view(View::Pm(reading)).await,
-            View::PmEnv(_) => self.render_view(View::PmEnv(reading)).await,
-            _ => {}
+        if let Some(view) = &self.view {
+            match view {
+                View::Aqi(_) => self.render_view(View::Aqi(reading)).await,
+                View::Init => self.render_view(View::Pm(reading)).await,
+                View::ParticleDiameter1(_) => self.render_view(View::ParticleDiameter1(reading)).await,
+                View::ParticleDiameter2(_) => self.render_view(View::ParticleDiameter2(reading)).await,
+                View::Pm(_) => self.render_view(View::Pm(reading)).await,
+                View::PmEnv(_) => self.render_view(View::PmEnv(reading)).await,
+                _ => {}
+            }
         }
     }
 
-    pub async fn render_next_view(&mut self) {
+    async fn render_next_view(&mut self) {
         debug!("render_next_view");
-        match self.view {
-            View::Aqi(reading) => self.render_view(View::ParticleDiameter1(reading)).await,
-            View::ParticleDiameter1(reading) => self.render_view(View::ParticleDiameter2(reading)).await,
-            View::ParticleDiameter2(reading) => self.render_view(View::Pm(reading)).await,
-            View::Pm(reading) => self.render_view(View::PmEnv(reading)).await,
-            View::PmEnv(reading) => self.render_view(View::Aqi(reading)).await,
-            _ => {}
+        if let Some(view) = &self.view {
+            match view {
+                View::Aqi(reading) => self.render_view(View::ParticleDiameter1(*reading)).await,
+                View::ParticleDiameter1(reading) => self.render_view(View::ParticleDiameter2(*reading)).await,
+                View::ParticleDiameter2(reading) => self.render_view(View::Pm(*reading)).await,
+                View::Pm(reading) => self.render_view(View::PmEnv(*reading)).await,
+                View::PmEnv(reading) => self.render_view(View::Aqi(*reading)).await,
+                _ => {}
+            }
         }
     }
 
-    pub async fn render_prev_view(&mut self) {
+    async fn render_prev_view(&mut self) {
         debug!("render_prev_view");
-        match self.view {
-            View::Aqi(reading) => self.render_view(View::PmEnv(reading)).await,
-            View::ParticleDiameter1(reading) => self.render_view(View::Aqi(reading)).await,
-            View::ParticleDiameter2(reading) => self.render_view(View::ParticleDiameter1(reading)).await,
-            View::Pm(reading) => self.render_view(View::ParticleDiameter2(reading)).await,
-            View::PmEnv(reading) => self.render_view(View::Pm(reading)).await,
-            _ => {}
+        if let Some(view) = &self.view {
+            match view {
+                View::Aqi(reading) => self.render_view(View::PmEnv(*reading)).await,
+                View::ParticleDiameter1(reading) => self.render_view(View::Aqi(*reading)).await,
+                View::ParticleDiameter2(reading) => self.render_view(View::ParticleDiameter1(*reading)).await,
+                View::Pm(reading) => self.render_view(View::ParticleDiameter2(*reading)).await,
+                View::PmEnv(reading) => self.render_view(View::Pm(*reading)).await,
+                _ => {}
+            }
         }
     }
 
-    pub async fn render_view(&mut self, view: View) {
+    async fn render_view(&mut self, view: View) {
         debug!("render_view");
-        self.view = view;
+        self.view = Some(view);
         self.display.clear_buffer();
-        match self.view {
-            View::Aqi(reading) => self.render_aqi(reading),
-            View::Error => self.render_error(),
-            View::Init => self.render_init(),
-            View::ParticleDiameter1(reading) => self.render_particle_diameter_1(reading),
-            View::ParticleDiameter2(reading) => self.render_particle_diameter_2(reading),
-            View::Pm(reading) => self.render_pm(reading),
-            View::PmEnv(reading) => self.render_pm_env(reading),
+        if let Some(view) = &self.view {
+            match view {
+                View::Aqi(reading) => self.render_aqi(*reading),
+                View::Error => self.render_error(),
+                View::Init => self.render_init(),
+                View::ParticleDiameter1(reading) => self.render_particle_diameter_1(*reading),
+                View::ParticleDiameter2(reading) => self.render_particle_diameter_2(*reading),
+                View::Pm(reading) => self.render_pm(*reading),
+                View::PmEnv(reading) => self.render_pm_env(*reading),
+            }
         }
         self.display.flush().await.unwrap();
     }

@@ -26,7 +26,7 @@ use {esp_backtrace as _, esp_println as _};
 use pmsa003i::Pmsa003i;
 use static_cell::StaticCell;
 use lib::{AppEvent, App, I2cAsyncMutex};
-use lib::view::{display_task, RENDER_NEXT_VIEW, REFRESH_VIEW, RENDER_PREV_VIEW};
+use lib::view::{display_task, ViewCmd, VIEW_CMD};
 // TODO auto and manual mode
 
 // This creates a default app-descriptor required by the esp-idf bootloader.
@@ -136,14 +136,13 @@ async fn orchestration() {
             let mut app = APP.lock().await;
             match event {
                 AppEvent::AqiBtnClicked => {
-                    info!("AqiBtnClicked");
                     if app.is_ready() {
                         TAKE_ENV_READING.signal(());
                     }
                 }
                 AppEvent::LeftBtnClicked => {
                     if app.is_ready() {
-                        RENDER_PREV_VIEW.signal(());
+                        VIEW_CMD.signal(ViewCmd::Prev);
                     }
                 }
                 AppEvent::Pmsa003iReady => {
@@ -151,11 +150,11 @@ async fn orchestration() {
                     TAKE_ENV_READING.signal(()); // automatically take first reading
                 }
                 AppEvent::Pmsa003iReadingTaken(reading) => {
-                    REFRESH_VIEW.signal(reading.into());
+                    VIEW_CMD.signal(ViewCmd::Refresh(reading.into()));
                 }
                 AppEvent::RightBtnClicked => {
                     if app.is_ready() {
-                        RENDER_NEXT_VIEW.signal(());
+                        VIEW_CMD.signal(ViewCmd::Next);
                     }
                 }
             }

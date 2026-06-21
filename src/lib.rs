@@ -20,7 +20,7 @@ pub type Display = Ssd1306Async<I2CInterface<I2cDevice<'static, NoopRawMutex, I2
 pub type DisplayTextStyle = MonoTextStyle<'static, BinaryColor>;
 pub type I2cAsyncMutex = Mutex<NoopRawMutex, I2c<'static, Async>>;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct EnvReading {
     aqi_pm2_5: Option<AirQuality>,
     aqi_pm10: Option<AirQuality>,
